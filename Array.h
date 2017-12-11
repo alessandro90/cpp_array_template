@@ -453,6 +453,287 @@ namespace act {
 	// 	act::Array<T>::r_generator.seed(seed);
 	// }
 
+	// Template matrix class.
+
+	template<typename S>
+	Matrix<S> operator* (Matrix<S> const& M, Matrix<S> const& N);
+
+	template<typename T>
+	class Matrix : public Array<T> {
+	private:
+		// inherited from Array: ptr, size
+		std::size_t rows, cols;
+	public:
+		friend class act::Array<T>;
+		// Inherited public members:
+		// norm(), mean(), lenght(), sum(), fill(num), get_ptr(), apply(func, from, to, inc), t_uniform(from, to), set_seed(n).
+
+		// Cannot be used as auto i:Matrix because the functions name are not begin / end, but row_begin, row_end. For such for loops, use the simpler iterator.
+		class row_iterator {
+		private:
+			act::Matrix<T> const *it; // Pointer to matrix.
+			std::size_t index; // Current row index.
+			act::Array<T> arr; // Current row contents.
+		public:
+			using value_type = act::Array<T>;
+			using difference_type = std::ptrdiff_t;
+			using pointer = act::Array<T>*;
+			using reference = act::Array<T>&;
+			using iterator_category = std::random_access_iterator_tag; // non mutable.
+
+			row_iterator() {}
+			row_iterator(act::Matrix<T> const& matr, std::size_t ind) :
+				it(&matr),
+				index(ind) {
+				if (this->index <= it->rows)
+					arr = it->get_row(this->index);
+				else
+					arr.set_size(it->cols);
+			}
+
+			row_iterator(row_iterator const& itr) :
+				index(itr.index),
+				it(itr.it),
+				arr(itr.arr)
+			{}
+
+			~row_iterator() {}
+
+			row_iterator& operator=(row_iterator const& itr) {
+				if (this == &itr) {
+					return *this;
+				}
+				this->index = itr.index;
+				this->it = itr.it;
+				this->arr = itr.arr;
+				return *this;
+			}
+
+			reference operator*() {
+				return arr;
+			}
+
+			pointer operator->() {
+				return &arr;
+			}
+
+			row_iterator& operator++() {
+				++index;
+				if (this->index <= it->rows)
+					this->arr = it->get_row(index);
+				else
+					this->arr.set_size(it->cols);
+				return *this;
+			}
+			row_iterator operator++(int) {
+				row_iterator temp;
+				temp.it = this->it;
+				temp.index = this->index;
+				temp.arr = this->arr;
+				++index;
+				return temp;
+			}
+			row_iterator& operator--() {
+				--index;
+				this->arr = it->get_row(index);
+				return *this;
+			}
+			row_iterator operator--(int) {
+				row_iterator temp;
+				temp.it = this->it;
+				temp.index = this->index;
+				temp.arr = this->arr;
+				--index;
+				return temp;
+			}
+			friend row_iterator operator+(row_iterator const& itr1, row_iterator const& itr2) {
+				assert(itr1.it == itr2.it);
+				row_iterator temp(itr1.it, itr1.index + itr2.index);
+				return temp;
+			}
+			friend row_iterator operator-(row_iterator const& itr1, row_iterator const& itr2) {
+				assert(itr1.it == itr2.it);
+				row_iterator temp;
+				temp.index = itr1.index - itr2.index;
+				temp.it = itr1.it;
+				temp.arr = temp.it->get_row(temp.index);
+				return temp;
+			}
+			friend row_iterator operator+(row_iterator const& itr1, difference_type num) {
+				row_iterator temp(itr1.it, itr1.index + num);
+				return temp;
+			}
+			friend row_iterator operator+(difference_type num, row_iterator const& itr1) {
+				return itr1 + num;
+			}
+
+			friend row_iterator operator-(difference_type num, row_iterator const& itr1) {
+				row_iterator temp(itr1.it, itr1.index - num);
+				return temp;
+			}
+			friend row_iterator operator-(row_iterator const& itr1, difference_type num) {
+				return num - itr1;
+			}
+			row_iterator& operator+=(difference_type num) {
+				this->index += num;
+				this->arr = this->it->get_row(this->index);
+				return *this;
+			}
+			row_iterator& operator-=(difference_type num) {
+				this->index -= num;
+				this->arr = this->it->get_row(this->index);
+				return *this;
+			}
+			reference operator[](difference_type ind) {
+				this->arr = this->it->get_row(ind);
+				return this->arr;
+			}
+			friend void swap(row_iterator itr1, row_iterator itr2) {
+				row_iterator temp(itr1);
+				itr1 = itr2;
+				itr2 = temp;
+			}
+			bool operator<(row_iterator const& itr) const {
+				return (this->index < itr.index);
+			}
+			bool operator>(row_iterator const& itr) const {
+				return (this->index > itr.index);
+			}
+			bool operator<=(row_iterator const& itr) const {
+				return (this->index <= itr.index);
+			}
+			bool operator>=(row_iterator const& itr) const {
+				return (this->index >= itr.index);
+			}
+			bool operator==(row_iterator const& itr) const {
+				return index == itr.index;
+			}
+			bool operator!=(row_iterator const& itr) const {
+				return !(index == itr.index);
+			}
+		};
+
+		row_iterator row_begin() const {
+			return row_iterator(*this, 0);
+		}
+		row_iterator row_end() const {
+			return row_iterator(*this, this->rows);
+		}
+
+		using iterator = typename act::Array<T>::iterator;
+		using const_iterator = typename act::Array<T>::const_iterator;
+
+		iterator begin() { return act::Array<T>::begin(); }
+		iterator end() { return act::Array<T>::end(); }
+
+		const_iterator begin() const { return act::Array<T>::begin(); }
+		const_iterator end() const { return act::Array<T>::end(); }
+
+		const_iterator cbegin() const { return act::Array<T>::cbegin(); }
+		const_iterator cend() const { return act::Array<T>::cend(); }
+
+
+		// Constructors.
+		Matrix();
+
+		Matrix(std::size_t const& n, std::size_t const& m);
+
+		Matrix(Matrix<T> const& M);
+
+		Matrix(Matrix<T>&& M);
+
+		Matrix(act::Array<T> const& A, std::size_t r, std::size_t c);
+
+		Matrix(act::Array<T>&& A, std::size_t r, std::size_t c);
+
+		explicit Matrix(std::initializer_list<act::Array<T>> const& L);
+
+		// Copy assignment
+		Matrix& operator=(Matrix const& M);
+
+		Matrix& operator=(Matrix&& M);
+
+		virtual ~Matrix();
+
+		void set_size(std::size_t n, std::size_t m);
+
+		T& operator()(std::size_t const& i, std::size_t const& j);
+
+		T const& operator()(std::size_t const& i, std::size_t const& j) const;
+
+		Matrix operator-() const;
+
+		T trace() const;
+
+		Matrix adjoint() const;
+
+		Array<T> get_diag() const;
+
+		Array<T> get_row(std::size_t row) const;
+
+		Array<T> get_col(std::size_t col) const;
+
+		void reset();
+
+		std::size_t get_rows() const;
+
+		std::size_t get_cols() const;
+
+		void identity();
+
+		void identity(std::size_t n);
+
+		// Stack the matrix mat under *this.
+		Matrix<T>& vstack(act::Matrix<T>const& mat);
+
+		// Stack the array a under *this.
+		Matrix<T>& vstack(act::Array<T> const& a);
+
+		// Stack the matrix mat to the right of *this.
+		Matrix<T>& hstack(act::Matrix<T> const& mat);
+
+		// Stack the array a to the right of *this.
+		Matrix<T>& hstack(act::Array<T> const& a);
+
+		Matrix<T> conj() const;
+
+		Matrix<T> each_prod(Matrix<T> const& M) const;
+
+		Matrix<T> each_div(Matrix<T> const& M) const;
+
+		void to_file(std::string const& fname) const;
+
+		friend std::ostream& operator<< (std::ostream& out, Matrix const& M) {
+			if (M.ptr == nullptr) {
+				out << "[nullptr]" << std::endl;
+			}
+			else {
+				for (std::size_t i = 0; i < M.rows; ++i) {
+					out << "[ ";
+					for (std::size_t j = 0; j < M.cols; ++j) {
+						out << M(i, j) << " ";
+					}
+					out << "]";
+					out << std::endl;
+				}
+			}
+			return out;
+		}
+		friend Matrix<T>(act::operator*<T>)(Matrix<T> const& M, Matrix<T> const& N);
+		friend Array<T>(act::operator*<T>)(Matrix<T> const& M, Array<T> const& A);
+
+		//explicit cast operator.
+		template<typename type>
+		explicit operator Matrix<type>() const;
+
+		// Delete all the 'add' functions inherited from Array.
+		Array<T>& add(Array<T> const& A) = delete;
+		Array<T>& add(T const& A) = delete;
+		Array<T>& add(std::initializer_list<T> const& L) = delete;
+	};
+
+
+	// Array member functions.
 	template<class T> Array<T>::Array() : size(0), ptr(nullptr){}
 
 	template<class T>
@@ -742,6 +1023,7 @@ namespace act {
 		n = static_cast<double>(std::sqrt(n));
 		return n;
 	}
+
 	// Basic Array-Array operations
 	// ============================
 	template<typename S>
@@ -861,285 +1143,8 @@ namespace act {
 	// ============================
 
 
-	// Template matrix class.
 
-	template<typename S>
-	Matrix<S> operator* (Matrix<S> const& M, Matrix<S> const& N);
-
-	template<typename T>
-	class Matrix : public Array<T> {
-	private:
-		// inherited from Array: ptr, size
-		std::size_t rows, cols;
-	public:
-		friend class act::Array<T>;
-		// Inherited public members:
-		// norm(), mean(), lenght(), sum(), fill(num), get_ptr(), apply(func, from, to, inc), t_uniform(from, to), set_seed(n).
-
-		// Cannot be used as auto i:Matrix because the functions name are not begin / end, but row_begin, row_end. For such for loops, use the simpler iterator.
-		class row_iterator {
-		private:
-			act::Matrix<T> const *it; // Pointer to matrix.
-			std::size_t index; // Current row index.
-			act::Array<T> arr; // Current row contents.
-		public:
-			using value_type = act::Array<T>;
-			using difference_type = std::ptrdiff_t;
-			using pointer = act::Array<T>*;
-			using reference = act::Array<T>&;
-			using iterator_category = std::random_access_iterator_tag; // non mutable.
-
-			row_iterator(){}
-			row_iterator(act::Matrix<T> const& matr, std::size_t ind):
-				it(&matr),
-				index(ind) {
-				if (this->index <= it->rows)
-					arr = it->get_row(this->index);
-				else
-					arr.set_size(it->cols);
-				}
-
-			row_iterator(row_iterator const& itr):
-				index(itr.index),
-				it(itr.it),
-				arr(itr.arr)
-				{}
-
-			~row_iterator(){}
-
-			row_iterator& operator=(row_iterator const& itr) {
-				if(this == &itr){
-					return *this;
-				}
-				this->index = itr.index;
-				this->it = itr.it;
-				this->arr = itr.arr;
-				return *this;
-			}
-
-			reference operator*() {
-				return arr;
-			}
-
-			pointer operator->() {
-				return &arr;
-			}
-
-			row_iterator& operator++() {
-				++index;
-				if (this->index <= it->rows)
-					this->arr = it->get_row(index);
-				else
-					this->arr.set_size(it->cols);
-				return *this;
-			}
-			row_iterator operator++(int) {
-				row_iterator temp;
-				temp.it = this->it;
-				temp.index = this->index;
-				temp.arr = this->arr;
-				++index;
-				return temp;
-			}
-			row_iterator& operator--() {
-				--index;
-				this->arr = it->get_row(index);
-				return *this;
-			}
-			row_iterator operator--(int) {
-				row_iterator temp;
-				temp.it = this->it;
-				temp.index = this->index;
-				temp.arr = this->arr;
-				--index;
-				return temp;
-			}
-			friend row_iterator operator+(row_iterator const& itr1, row_iterator const& itr2) {
-				assert(itr1.it == itr2.it);
-				row_iterator temp(itr1.it, itr1.index + itr2.index);
-				return temp;
-			}
-			friend row_iterator operator-(row_iterator const& itr1, row_iterator const& itr2) {
-				assert(itr1.it == itr2.it);
-				row_iterator temp;
-				temp.index = itr1.index - itr2.index;
-				temp.it = itr1.it;
-				temp.arr = temp.it->get_row(temp.index);
-				return temp;
-			}
-			friend row_iterator operator+(row_iterator const& itr1, difference_type num) {
-				row_iterator temp(itr1.it, itr1.index + num);
-				return temp;
-			}
-			friend row_iterator operator+(difference_type num, row_iterator const& itr1) {
-				return itr1 + num;
-			}
-
-			friend row_iterator operator-(difference_type num, row_iterator const& itr1) {
-				row_iterator temp(itr1.it, itr1.index - num);
-				return temp;
-			}
-			friend row_iterator operator-(row_iterator const& itr1, difference_type num) {
-				return num - itr1;
-			}
-			row_iterator& operator+=(difference_type num) {
-				this->index += num;
-				this->arr = this->it->get_row(this->index);
-				return *this;
-			}
-			row_iterator& operator-=(difference_type num) {
-				this->index -= num;
-				this->arr = this->it->get_row(this->index);
-				return *this;
-			}
-			reference operator[](difference_type ind) {
-				this->arr = this->it->get_row(ind);
-				return this->arr;
-			}
-			friend void swap(row_iterator itr1, row_iterator itr2) {
-				row_iterator temp(itr1);
-				itr1 = itr2;
-				itr2 = temp;
-			}
-			bool operator<(row_iterator const& itr) const {
-				return (this->index < itr.index);
-			}
-			bool operator>(row_iterator const& itr) const {
-				return (this->index > itr.index);
-			}
-			bool operator<=(row_iterator const& itr) const {
-				return (this->index <= itr.index);
-			}
-			bool operator>=(row_iterator const& itr) const {
-				return (this->index >= itr.index);
-			}
-			bool operator==(row_iterator const& itr) const {
-				return index == itr.index;
-			}
-			bool operator!=(row_iterator const& itr) const {
-				return !(index == itr.index);
-			}
-		};
-
-		row_iterator row_begin() const {
-			return row_iterator(*this, 0);
-		}
-		row_iterator row_end() const {
-			return row_iterator(*this, this->rows);
-		}
-
-		using iterator = typename act::Array<T>::iterator;
-		using const_iterator = typename act::Array<T>::const_iterator;
-
-		iterator begin() { return act::Array<T>::begin(); }
-		iterator end() { return act::Array<T>::end(); }
-		
-		const_iterator begin() const { return act::Array<T>::begin(); }
-		const_iterator end() const { return act::Array<T>::end(); }
-
-		const_iterator cbegin() const { return act::Array<T>::cbegin(); }
-		const_iterator cend() const { return act::Array<T>::cend(); }
-		
-
-		// Constructors.
-		Matrix();
-
-		Matrix(std::size_t const& n, std::size_t const& m);
-
-		Matrix(Matrix<T> const& M);
-
-		Matrix(Matrix<T>&& M);
-
-		Matrix(act::Array<T> const& A, std::size_t r, std::size_t c);
-
-		Matrix(act::Array<T>&& A, std::size_t r, std::size_t c);
-
-		explicit Matrix(std::initializer_list<act::Array<T>> const& L);
-
-		// Copy assignment
-		Matrix& operator=(Matrix const& M);
-
-		Matrix& operator=(Matrix&& M);
-
-		virtual ~Matrix();
-
-		void set_size(std::size_t n, std::size_t m);
-
-		T& operator()(std::size_t const& i, std::size_t const& j);
-
-		T const& operator()(std::size_t const& i, std::size_t const& j) const;
-
-		Matrix operator-() const;
-
-		T trace() const;
-
-		Matrix adjoint() const;
-
-		Array<T> get_diag() const;
-
-		Array<T> get_row(std::size_t row) const;
-
-		Array<T> get_col(std::size_t col) const;
-
-		void reset();
-
-		std::size_t get_rows() const;
-
-		std::size_t get_cols() const;
-
-		void identity();
-
-		void identity(std::size_t n);
-
-        // Stack the matrix mat under *this.
-		Matrix<T>& vstack(act::Matrix<T>const& mat);
-
-		// Stack the array a under *this.
-		Matrix<T>& vstack(act::Array<T> const& a);
-
-        // Stack the matrix mat to the right of *this.
-		Matrix<T>& hstack(act::Matrix<T> const& mat);
-
-		// Stack the array a to the right of *this.
-		Matrix<T>& hstack(act::Array<T> const& a);
-
-		Matrix<T> conj() const;
-
-		Matrix<T> each_prod(Matrix<T> const& M) const;
-
-		Matrix<T> each_div(Matrix<T> const& M) const;
-
-		void to_file(std::string const& fname) const;
-
-		friend std::ostream& operator<< (std::ostream& out, Matrix const& M) {
-			if (M.ptr == nullptr) {
-				out << "[nullptr]" << std::endl;
-			}
-			else {
-				for (std::size_t i = 0; i < M.rows; ++i) {
-					out << "[ ";
-					for (std::size_t j = 0; j < M.cols; ++j) {
-						out << M(i, j) << " ";
-					}
-					out << "]";
-					out << std::endl;
-				}
-			}
-			return out;
-		}
-		friend Matrix<T>(act::operator*<T>)(Matrix<T> const& M, Matrix<T> const& N);
-		friend Array<T>(act::operator*<T>)(Matrix<T> const& M, Array<T> const& A);
-
-		//explicit cast operator.
-		template<typename type>
-		explicit operator Matrix<type>() const;
-
-		// Delete all the 'add' functions inherited from Array.
-		Array<T>& add(Array<T> const& A) = delete;
-		Array<T>& add(T const& A) = delete;
-		Array<T>& add(std::initializer_list<T> const& L) = delete;
-	};
-
+	// Matrix member functions.
 	template<class T>
 	Matrix<T>::Matrix() : Array<T>(), rows(0), cols(0) {}
 
@@ -1544,6 +1549,8 @@ namespace act {
 		}
 		return new_matrix;
 	}
+
+	// Non member functions.
 	// Matrix-Matrix operations.
 	template<typename T>
 	Matrix<T> operator+(Matrix<T> const& A, Matrix<T> const& B) {
