@@ -100,9 +100,9 @@ namespace act {
 	template<typename T>
 	class Array {
 	protected:
+		std::size_t size;
 		T * ptr;
 		static std::mt19937_64 r_generator;
-		std::size_t size;
 	public:
 		friend class act::Matrix<T>;
 
@@ -448,11 +448,6 @@ namespace act {
 		act::Array<T>::r_generator.seed(seed);
 	}
 
-	// template<typename T>
-	// void act::Array<T>::set_seed(unsigned int seed) {
-	// 	act::Array<T>::r_generator.seed(seed);
-	// }
-
 	// Template matrix class.
 
 	template<typename S>
@@ -466,7 +461,7 @@ namespace act {
 	public:
 		friend class act::Array<T>;
 		// Inherited public members:
-		// norm(), mean(), lenght(), sum(), fill(num), get_ptr(), apply(func, from, to, inc), t_uniform(from, to), set_seed(n).
+		// norm(), mean(), lenght(), sum(), fill(num), get_ptr(), apply(func, from, to, inc), r_uniform(from, to), set_seed(n).
 
 		// Cannot be used as auto i:Matrix because the functions name are not begin / end, but row_begin, row_end. For such for loops, use the simpler iterator.
 		class row_iterator {
@@ -492,8 +487,8 @@ namespace act {
 			}
 
 			row_iterator(row_iterator const& itr) :
-				index(itr.index),
 				it(itr.it),
+				index(itr.index),
 				arr(itr.arr)
 			{}
 
@@ -653,8 +648,10 @@ namespace act {
 
 		Matrix& operator=(Matrix&& M);
 
+		// Destructor.
 		virtual ~Matrix();
 
+		// Member functions.
 		void set_size(std::size_t n, std::size_t m);
 
 		T& operator()(std::size_t const& i, std::size_t const& j);
@@ -703,6 +700,7 @@ namespace act {
 
 		void to_file(std::string const& fname) const;
 
+		// Friend functions.
 		friend std::ostream& operator<< (std::ostream& out, Matrix const& M) {
 			if (M.ptr == nullptr) {
 				out << "[nullptr]" << std::endl;
