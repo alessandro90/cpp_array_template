@@ -15,6 +15,14 @@
 #include <random>
 #include <utility>
 #include <functional>
+
+// What's next:
+// 1. Make all the 'distributions' functions inaccessible.
+// 2. Make boolean array indexing possible.
+// 3. Make array slicing possible.
+
+
+
 // namespace name: act (array class template)
 // A array class template
 
@@ -31,57 +39,6 @@ namespace act {
 	template<typename T>
 	using cx = std::complex<T>;
 
-	//inline unsigned int random_seed{rd()};
-	//unsigned int random_seed;
-
-	template<typename T>
-	struct Uniform_distribution {
-		static auto uniform_distribution(T from, T to);
-	};
-
-	template<typename T>
-	auto Uniform_distribution<T>::uniform_distribution(T from, T to) {
-		return std::uniform_real_distribution<T>(from, to);
-	}
-
-	template<>
-	struct Uniform_distribution<int> {
-		static auto uniform_distribution(int from, int to);
-	};
-	auto Uniform_distribution<int>::uniform_distribution(int from, int to) {
-		return std::uniform_int_distribution<>(from, to);
-	}
-
-	// Return a function which takes a mersenne and gives a complex.
-	template<typename T>
-	std::function<act::cx<T>(std::mt19937_64&)> uniform_complex_distribution(act::cx<T> from, act::cx<T> to) {
-		std::uniform_real_distribution<T> dr(std::real(from), std::real(to));
-		std::uniform_real_distribution<T> di(std::imag(from), std::imag(to));
-
-		auto res = 
-			[dr, di]
-			(std::mt19937_64& n_gen) mutable 
-		{
-			act::cx<T> value;
-			value.real(dr(n_gen)); 
-			value.imag(di(n_gen));
-			return value;
-		};
-
-		return res;
-	}
-
-	template<typename T>
-	struct Uniform_distribution<act::cx<T>> {
-		static auto uniform_distribution(act::cx<T> from, act::cx<T> to);
-	};
-
-	template<typename T>
-	auto act::Uniform_distribution<act::cx<T>>::uniform_distribution(act::cx<T> from, act::cx<T> to) {
-		return uniform_complex_distribution(from, to);
-	}
-	
-
 	template<typename T>
 	class Matrix;
 
@@ -97,24 +54,48 @@ namespace act {
 	template<typename S>
 	Array<S> operator*(Matrix<S> const& M, Array<S> const& A);
 
+	// Abstract array class. Base for act::Array and act::Matrix.
 	template<typename T>
-	class Array {
+	class AbstractArray {
 	protected:
 		std::size_t size;
 		T * ptr;
 		static std::mt19937_64 r_generator;
+
+		// Common constroctors.
+		AbstractArray() : size{ 0 }, ptr{ nullptr } {}
+		AbstractArray(std::size_t const& n) : size(n), ptr(new T[n]{}) {}
+		AbstractArray(AbstractArray&& A) : size(A.size), ptr(A.ptr) {
+			A.ptr = nullptr;
+			A.size = 0;
+		}
+		// Assignment operators.
+		AbstractArray& operator=(AbstractArray const& A) {
+			for (std::size_t i = 0; i < this->size; ++i) {
+				this->ptr[i] = A.ptr[i];
+			}
+			return *this;
+		}
+		AbstractArray& operator=(AbstractArray&& A) {
+			this->size = A.size;
+			if (this->ptr != nullptr)
+				delete[] this->ptr;
+			this->ptr = A.ptr;
+			A.ptr = nullptr;
+			A.size = 0;
+			return *this;
+		}
+
 	public:
-		friend class act::Matrix<T>;
 
 		// Iterators implementation.
-
 		class iterator {
 		private:
-			friend class Array<T>;
+			friend class AbstractArray<T>;
 			using value_type = T;
 			using difference_type = std::ptrdiff_t;
-			using pointer = T *;
-			using reference = T&;
+			using pointer = T * ;
+			using reference = T & ;
 			using iterator_category = std::random_access_iterator_tag;
 			pointer ptr_;
 			std::size_t index_;
@@ -136,9 +117,9 @@ namespace act {
 			reference operator*() {
 				return this->ptr_[index_];
 			}
-			
+
 			pointer operator->() {
-				return this->ptr_;
+				return this->ptr_ + index_;
 			}
 
 			iterator& operator++() {
@@ -219,18 +200,13 @@ namespace act {
 				return this->index_ != itr.index_;
 			}
 		};
-		
-
-		iterator begin() { return iterator(this->ptr, 0); }
-		iterator end() { return iterator(this->ptr, this->size); }
-
 		class const_iterator {
 		private:
-			friend class Array<T>;
+			friend class AbstractArray<T>;
 			using value_type = T;
 			using difference_type = std::ptrdiff_t;
-			using pointer = T const* ;
-			using reference = T const& ;
+			using pointer = T const*;
+			using reference = T const&;
 			using iterator_category = std::random_access_iterator_tag;
 			pointer ptr_;
 			std::size_t index_;
@@ -254,7 +230,7 @@ namespace act {
 			}
 
 			pointer operator->() {
-				return this->ptr_;
+				return this->ptr_ + index_;
 			}
 
 			const_iterator& operator++() {
@@ -336,13 +312,108 @@ namespace act {
 			}
 		};
 
-		
+		iterator begin() { return iterator(this->ptr, 0); }
+		iterator end() { return iterator(this->ptr, this->size); }
+
 		const_iterator begin() const { return const_iterator(this->ptr, 0); }
 		const_iterator end() const { return const_iterator(this->ptr, this->size); }
 
 		const_iterator cbegin() const { return const_iterator(this->ptr, 0); }
 		const_iterator cend() const { return const_iterator(this->ptr, this->size); }
-		
+
+		// Virtual functions.
+		virtual void reset() = 0;
+		virtual void to_file(std::string const& fname) const = 0;
+
+		// Common member functions.
+		double norm() const;
+
+		T sum() const;
+
+		T mean() const;
+
+		void fill(T const& num);
+
+		void r_uniform(T from = static_cast<T>(0.), T to = static_cast<T> (1.));
+
+		template<typename func>
+		void apply(func&& f, iterator from = iterator(), iterator to = iterator(), std::size_t inc = 1);
+
+		// Returns a pointer to const to the private dynamically allocated array.
+		T const * get_ptr() const { return this->ptr; }
+
+		std::size_t lenght() const { return this->size; }
+		friend void set_seed<T>(unsigned int seed);
+
+		// Destructor.
+		virtual ~AbstractArray() {
+			delete[] this->ptr;
+		}
+	};
+
+
+	template<typename T>
+	struct Uniform_distribution {
+		static auto uniform_distribution(T from, T to);
+	};
+
+	template<typename T>
+	auto Uniform_distribution<T>::uniform_distribution(T from, T to) {
+		return std::uniform_real_distribution<T>(from, to);
+	}
+
+	template<>
+	struct Uniform_distribution<int> {
+		static auto uniform_distribution(int from, int to);
+	};
+	auto Uniform_distribution<int>::uniform_distribution(int from, int to) {
+		return std::uniform_int_distribution<>(from, to);
+	}
+
+	// Return a function which takes a mersenne and gives a complex.
+	template<typename T>
+	std::function<act::cx<T>(std::mt19937_64&)> uniform_complex_distribution(act::cx<T> from, act::cx<T> to) {
+		std::uniform_real_distribution<T> dr(std::real(from), std::real(to));
+		std::uniform_real_distribution<T> di(std::imag(from), std::imag(to));
+
+		auto res =
+			[dr, di]
+		(std::mt19937_64& n_gen) mutable
+		{
+			act::cx<T> value;
+			value.real(dr(n_gen));
+			value.imag(di(n_gen));
+			return value;
+		};
+
+		return res;
+	}
+
+	template<typename T>
+	struct Uniform_distribution<act::cx<T>> {
+		static auto uniform_distribution(act::cx<T> from, act::cx<T> to);
+	};
+
+	template<typename T>
+	auto Uniform_distribution<act::cx<T>>::uniform_distribution(act::cx<T> from, act::cx<T> to) {
+		return uniform_complex_distribution(from, to);
+	}
+
+	///////////////////////////////////////////////////////////
+	template<typename T>
+	class Array : public AbstractArray<T> {
+		// Inherited public members:
+		// norm(), mean(), lenght(), sum(), fill(num), get_ptr(), apply(func, from, to, inc), r_uniform(from, to).
+		// Iterators are inherited too.
+		// Virtual overrides:
+		// virtual void reset() override;
+		// virtual void to_file(std::string const& fname) const override;
+	public:
+		friend class act::Matrix<T>;
+
+		using iterator = typename AbstractArray<T>::iterator;
+		using const_iterator = typename AbstractArray<T>::const_iterator;
+
 		// Constructors.
 		Array();
 
@@ -370,7 +441,6 @@ namespace act {
 		// Destructor.
 		virtual ~Array();
 
-
 		// Member functions.
 		void set_size(std::size_t n);
 
@@ -379,34 +449,14 @@ namespace act {
 
 		Array operator-() const;
 
-		std::size_t lenght() const { return this->size; }
-
-		// Returns a pointer to const to the private dynamically allocated array.
-		T const * get_ptr() const { return this->ptr; }
-
-		double norm() const;
-
-		T sum() const;
-
-		T mean() const;
-
 		Array<T>& add(T const& x);
 
 		Array<T>& add(Array<T> const& A);
 
 		Array<T>& add(std::initializer_list<T> const& L);
 
-		void fill(T const& num);
-
-		void reset();
-
-		template<typename func> // Passa func come func&& o func const& per evitare copia di funzione
-		void apply(func&& f,
-				   typename Array<T>::iterator from = Array<T>::iterator(),
-				   typename Array<T>::iterator to = Array<T>::iterator(),
-				   std::size_t inc = 1);
-
 		Array<T> each_prod(Array<T> const& A) const;
+
 		Array<T> each_div(Array<T> const& A) const;
 
 		// explicit type casting
@@ -415,16 +465,14 @@ namespace act {
 
 		Array<T> conj() const;
 
-		friend void set_seed<T>(unsigned int seed);
-
-		void r_uniform(T from = static_cast<T>(0.), T to = static_cast<T> (1.));
-
-		void to_file(std::string const& fname) const;
+		// Virtual member functions.
+		virtual void reset() override;
+		virtual void to_file(std::string const& fname) const override;
 
 		// Friend functions
 		friend std::ostream& operator<< (std::ostream& out, Array const& A) {
 			if (A.ptr == nullptr) {
-				out << "[nullptr]" << std::endl;
+				out << "[ nullptr ]" << std::endl;
 			}
 			else {
 				out << "[";
@@ -440,193 +488,34 @@ namespace act {
 
 	};
 	template<typename T>
-	std::mt19937_64 act::Array<T>::r_generator{ std::random_device{}() };
+	std::mt19937_64 act::AbstractArray<T>::r_generator{ std::random_device{}() };
 	// classic initialization std::mt19937 gen(rd());
 
 	template<typename T>
 	static void set_seed(unsigned int seed) {
-		act::Array<T>::r_generator.seed(seed);
+		AbstractArray<T>::r_generator.seed(seed);
 	}
 
 	// Template matrix class.
-
 	template<typename S>
 	Matrix<S> operator* (Matrix<S> const& M, Matrix<S> const& N);
 
 	template<typename T>
-	class Matrix : public Array<T> {
+	class Matrix : public AbstractArray<T> {
 	private:
-		// inherited from Array: ptr, size
+		// Rows and columns number respectively.
 		std::size_t rows, cols;
 	public:
 		friend class act::Array<T>;
 		// Inherited public members:
-		// norm(), mean(), lenght(), sum(), fill(num), get_ptr(), apply(func, from, to, inc), r_uniform(from, to), set_seed(n).
+		// norm(), mean(), lenght(), sum(), fill(num), get_ptr(), apply(func, from, to, inc), r_uniform(from, to).
+		// Iterators are inherited too.
+		// Virtual overrides:
+		// virtual void reset() override;
+		// virtual void to_file(std::string const& fname) const override;
 
-		// Cannot be used as auto i:Matrix because the functions name are not begin / end, but row_begin, row_end. For such for loops, use the simpler iterator.
-		class row_iterator {
-		private:
-			act::Matrix<T> const *it; // Pointer to matrix.
-			std::size_t index; // Current row index.
-			act::Array<T> arr; // Current row contents.
-		public:
-			using value_type = act::Array<T>;
-			using difference_type = std::ptrdiff_t;
-			using pointer = act::Array<T>*;
-			using reference = act::Array<T>&;
-			using iterator_category = std::random_access_iterator_tag; // non mutable.
-
-			row_iterator() {}
-			row_iterator(act::Matrix<T> const& matr, std::size_t ind) :
-				it(&matr),
-				index(ind) {
-				if (this->index <= it->rows)
-					arr = it->get_row(this->index);
-				else
-					arr.set_size(it->cols);
-			}
-
-			row_iterator(row_iterator const& itr) :
-				it(itr.it),
-				index(itr.index),
-				arr(itr.arr)
-			{}
-
-			~row_iterator() {}
-
-			row_iterator& operator=(row_iterator const& itr) {
-				if (this == &itr) {
-					return *this;
-				}
-				this->index = itr.index;
-				this->it = itr.it;
-				this->arr = itr.arr;
-				return *this;
-			}
-
-			reference operator*() {
-				return arr;
-			}
-
-			pointer operator->() {
-				return &arr;
-			}
-
-			row_iterator& operator++() {
-				++index;
-				if (this->index <= it->rows)
-					this->arr = it->get_row(index);
-				else
-					this->arr.set_size(it->cols);
-				return *this;
-			}
-			row_iterator operator++(int) {
-				row_iterator temp;
-				temp.it = this->it;
-				temp.index = this->index;
-				temp.arr = this->arr;
-				++index;
-				return temp;
-			}
-			row_iterator& operator--() {
-				--index;
-				this->arr = it->get_row(index);
-				return *this;
-			}
-			row_iterator operator--(int) {
-				row_iterator temp;
-				temp.it = this->it;
-				temp.index = this->index;
-				temp.arr = this->arr;
-				--index;
-				return temp;
-			}
-			friend row_iterator operator+(row_iterator const& itr1, row_iterator const& itr2) {
-				assert(itr1.it == itr2.it);
-				row_iterator temp(itr1.it, itr1.index + itr2.index);
-				return temp;
-			}
-			friend row_iterator operator-(row_iterator const& itr1, row_iterator const& itr2) {
-				assert(itr1.it == itr2.it);
-				row_iterator temp;
-				temp.index = itr1.index - itr2.index;
-				temp.it = itr1.it;
-				temp.arr = temp.it->get_row(temp.index);
-				return temp;
-			}
-			friend row_iterator operator+(row_iterator const& itr1, difference_type num) {
-				row_iterator temp(itr1.it, itr1.index + num);
-				return temp;
-			}
-			friend row_iterator operator+(difference_type num, row_iterator const& itr1) {
-				return itr1 + num;
-			}
-
-			friend row_iterator operator-(difference_type num, row_iterator const& itr1) {
-				row_iterator temp(itr1.it, itr1.index - num);
-				return temp;
-			}
-			friend row_iterator operator-(row_iterator const& itr1, difference_type num) {
-				return num - itr1;
-			}
-			row_iterator& operator+=(difference_type num) {
-				this->index += num;
-				this->arr = this->it->get_row(this->index);
-				return *this;
-			}
-			row_iterator& operator-=(difference_type num) {
-				this->index -= num;
-				this->arr = this->it->get_row(this->index);
-				return *this;
-			}
-			reference operator[](difference_type ind) {
-				this->arr = this->it->get_row(ind);
-				return this->arr;
-			}
-			friend void swap(row_iterator itr1, row_iterator itr2) {
-				row_iterator temp(itr1);
-				itr1 = itr2;
-				itr2 = temp;
-			}
-			bool operator<(row_iterator const& itr) const {
-				return (this->index < itr.index);
-			}
-			bool operator>(row_iterator const& itr) const {
-				return (this->index > itr.index);
-			}
-			bool operator<=(row_iterator const& itr) const {
-				return (this->index <= itr.index);
-			}
-			bool operator>=(row_iterator const& itr) const {
-				return (this->index >= itr.index);
-			}
-			bool operator==(row_iterator const& itr) const {
-				return index == itr.index;
-			}
-			bool operator!=(row_iterator const& itr) const {
-				return !(index == itr.index);
-			}
-		};
-
-		row_iterator row_begin() const {
-			return row_iterator(*this, 0);
-		}
-		row_iterator row_end() const {
-			return row_iterator(*this, this->rows);
-		}
-
-		using iterator = typename act::Array<T>::iterator;
-		using const_iterator = typename act::Array<T>::const_iterator;
-
-		iterator begin() { return act::Array<T>::begin(); }
-		iterator end() { return act::Array<T>::end(); }
-
-		const_iterator begin() const { return act::Array<T>::begin(); }
-		const_iterator end() const { return act::Array<T>::end(); }
-
-		const_iterator cbegin() const { return act::Array<T>::cbegin(); }
-		const_iterator cend() const { return act::Array<T>::cend(); }
-
+		using iterator = typename AbstractArray<T>::iterator;
+		using const_iterator = typename AbstractArray<T>::const_iterator;
 
 		// Constructors.
 		Matrix();
@@ -670,8 +559,6 @@ namespace act {
 
 		Array<T> get_col(std::size_t col) const;
 
-		void reset();
-
 		std::size_t get_rows() const;
 
 		std::size_t get_cols() const;
@@ -698,12 +585,15 @@ namespace act {
 
 		Matrix<T> each_div(Matrix<T> const& M) const;
 
-		void to_file(std::string const& fname) const;
+		// Virtual member functions.
+		virtual void to_file(std::string const& fname) const override;
+
+		virtual void reset() override;
 
 		// Friend functions.
 		friend std::ostream& operator<< (std::ostream& out, Matrix const& M) {
 			if (M.ptr == nullptr) {
-				out << "[nullptr]" << std::endl;
+				out << "[ nullptr ]" << std::endl;
 			}
 			else {
 				for (std::size_t i = 0; i < M.rows; ++i) {
@@ -712,7 +602,7 @@ namespace act {
 						out << M(i, j) << " ";
 					}
 					out << "]";
-					out << std::endl;
+					out << "\n";
 				}
 			}
 			return out;
@@ -723,60 +613,50 @@ namespace act {
 		//explicit cast operator.
 		template<typename type>
 		explicit operator Matrix<type>() const;
-
-		// Delete all the 'add' functions inherited from Array.
-		Array<T>& add(Array<T> const& A) = delete;
-		Array<T>& add(T const& A) = delete;
-		Array<T>& add(std::initializer_list<T> const& L) = delete;
 	};
 
 
 	// Array member functions.
-	template<class T> Array<T>::Array() : size(0), ptr(nullptr){}
+	template<class T> Array<T>::Array() : AbstractArray<T>() {}
 
 	template<class T>
-	Array<T>::Array(std::size_t const& n) : size(n), ptr(new T[n]{}) {}
+	Array<T>::Array(std::size_t const& n) : AbstractArray<T>(n) {}
 
 	template<class T>
-	Array<T>::Array(Array<T> const& A) : Array(A.size) {
+	Array<T>::Array(Array<T> const& A) : AbstractArray<T>(A.size) {
 		for (std::size_t i = 0; i < this->size; ++i)
-			ptr[i] = A(i);
+			this->ptr[i] = A(i);
 	}
 
 	template<class T>
-	Array<T>::Array(T const * const x, std::size_t const& N) : Array(N) {
+	Array<T>::Array(T const * const x, std::size_t const& N) : AbstractArray<T>(N) {
 		assert(x != nullptr);
 		for (std::size_t i = 0; i < this->size; ++i) {
-			ptr[i] = x[i];
+			this->ptr[i] = x[i];
 		}
 	}
 
 	template<class T>
-	Array<T>::Array(Array&& A) : size(A.size), ptr(A.ptr) {
-		A.ptr = nullptr;
-		A.size = 0;
-	}
+	Array<T>::Array(Array&& A) : AbstractArray<T>(std::move(A)) {}
 
 	template<class T>
-	Array<T>::Array(Matrix<T> const& M) : size(M.rows * M.cols), ptr(new T[M.rows * M.cols]) {
+	Array<T>::Array(Matrix<T> const& M) : AbstractArray<T>(M.rows * M.cols) {
 		for (std::size_t i = 0; i < M.size; ++i) {
 			this->ptr[i] = M.ptr[i];
 		}
 	}
 
 	template<class T>
-	Array<T>::Array(Matrix<T>&& M) : size(M.rows * M.cols), ptr(M.ptr) {
-		M.ptr = nullptr;
-		M.size = 0;
+	Array<T>::Array(Matrix<T>&& M) : AbstractArray<T>(std::move(M)) {
 		M.cols = 0;
 		M.rows = 0;
 	}
 
 	template<class T>
-	Array<T>::Array(std::initializer_list<T> const& L) : Array(L.size()) {
+	Array<T>::Array(std::initializer_list<T> const& L) : AbstractArray<T>(L.size()) {
 		std::size_t c = 0;
 		for (auto const& i : L) {
-			ptr[c] = i;
+			this->ptr[c] = i;
 			++c;
 		}
 	}
@@ -785,46 +665,40 @@ namespace act {
 	Array<T>& Array<T>::operator=(Array const& A) {
 		if (this == &A) { return *this; }
 		if (this->size != A.lenght()) {
-			delete[] ptr;
-			ptr = new T[A.lenght()];
+			delete[] this->ptr;
+			this->ptr = new T[A.lenght()];
 			this->size = A.lenght();
 		}
-		for (std::size_t i = 0; i < this->size; ++i) {
-			ptr[i] = A(i);
-		}
+
+		AbstractArray<T>::operator=(A);
 		return *this;
 	}
 
 	template<class T>
 	Array<T>& Array<T>::operator=(Array&& A) {
-		this->size = A.size;
-		if (this->ptr != nullptr)
-			delete[] this->ptr;
-		this->ptr = A.ptr;
-		A.ptr = nullptr;
-		A.size = 0;
+		AbstractArray<T>::operator=(std::move(A));
 		return *this;
 	}
 
 	template<class T>
 	Array<T>& Array<T>::operator=(std::initializer_list<T> const& L) {
-		delete[] ptr;
-		ptr = new T[L.size()];
+		delete[] this->ptr;
+		this->ptr = new T[L.size()];
 		this->size = L.size();
 		std::size_t c = 0;
 		for (auto const& i : L) {
-			ptr[c] = i;
+			this->ptr[c] = i;
 			++c;
 		}
 	}
 
 	template<class T>
-	Array<T>::~Array() { delete[] ptr; }
+	Array<T>::~Array() {}
 
 	template<class T>
-	T& Array<T>::operator()(std::size_t const& n) { return ptr[n]; }
+	T& Array<T>::operator()(std::size_t const& n) { return this->ptr[n]; }
 	template<class T>
-	T const& Array<T>::operator()(std::size_t const& n) const { return ptr[n]; }
+	T const& Array<T>::operator()(std::size_t const& n) const { return this->ptr[n]; }
 
 	template<class T> void Array<T>::set_size(std::size_t n) {
 		assert(this->ptr == nullptr);
@@ -840,7 +714,7 @@ namespace act {
 		return A;
 	}
 
-	template<class T> double Array<T>::norm() const {
+	template<class T> double AbstractArray<T>::norm() const {
 		double n{};
 		for (std::size_t i = 0; i < this->size; ++i)
 			n += (this->ptr[i]) * (this->ptr[i]);
@@ -848,15 +722,15 @@ namespace act {
 		return n;
 	}
 
-	template<class T> T Array<T>::sum() const {
+	template<class T> T AbstractArray<T>::sum() const {
 		T s{};
 		for (std::size_t i = 0; i < this->size; ++i) {
-			s += ptr[i];
+			s += this->ptr[i];
 		}
 		return s;
 	}
 
-	template<class T> T Array<T>::mean() const {
+	template<class T> T AbstractArray<T>::mean() const {
 		return this->sum() / static_cast<double>(this->size);
 	}
 
@@ -892,23 +766,24 @@ namespace act {
 		return this->add(Array<T>(L));
 	}
 
-	template<class T> void Array<T>::fill(T const& num) {
+	template<class T> void AbstractArray<T>::fill(T const& num) {
 		for (std::size_t i = 0; i < this->size; ++i)
 			this->ptr[i] = num;
 	}
 
-	template<class T> void Array<T>::reset() {
+	template<class T>
+	void Array<T>::reset() {
 		this->size = 0;
-		delete[] ptr;
-		ptr = nullptr;
+		delete[] this->ptr;
+		this->ptr = nullptr;
 	}
 
 	template<class T>
 	template<typename func>
-	void Array<T>::apply(
-		func&& f, 
-		typename Array<T>::iterator from,
-		typename Array<T>::iterator to,
+	void AbstractArray<T>::apply(
+		func&& f,
+		typename AbstractArray<T>::iterator from,
+		typename AbstractArray<T>::iterator to,
 		std::size_t inc
 	) {
 		assert(this->ptr && "Void object.");
@@ -916,7 +791,7 @@ namespace act {
 			from = this->begin();
 		if (!to.ptr_)
 			to = this->end();
-		
+
 		for (auto&& i = from; i < to; i += inc) {
 			f(*i);
 		}
@@ -925,7 +800,7 @@ namespace act {
 	template<class T> Array<T> Array<T>::each_prod(Array<T> const& A) const {
 		assert(this->size == A.size && "Arrays have wrong sizes.");
 		Array<T> res(this->size);
-		for(std::size_t i = 0; i < this->size; ++i) {
+		for (std::size_t i = 0; i < this->size; ++i) {
 			res(i) = this->ptr[i] * A.ptr[i];
 		}
 		return res;
@@ -934,7 +809,7 @@ namespace act {
 	template<class T> Array<T> Array<T>::each_div(Array<T> const& A) const {
 		assert(this->size == A.size && "Arrays have wrong sizes.");
 		Array<T> res(this->size);
-		for(std::size_t i = 0; i < this->size; ++i) {
+		for (std::size_t i = 0; i < this->size; ++i) {
 			res(i) = this->ptr[i] / A.ptr[i];
 		}
 		return res;
@@ -949,7 +824,8 @@ namespace act {
 		return new_array;
 	}
 
-	template<class T> Array<T> Array<T>::conj() const {
+	template<class T>
+	Array<T> Array<T>::conj() const {
 		Array<T> c_arr(this->size);
 		for (std::size_t i = 0; i < this->size; ++i)
 			c_arr(i) = std::conj(this->ptr[i]);
@@ -957,14 +833,15 @@ namespace act {
 	}
 
 	template<class T>
-	void act::Array<T>::r_uniform(T from, T to) {
-		auto&& udist = act::Uniform_distribution<T>::uniform_distribution(from, to);
-		for(auto&& v : *this) {
-			v = udist(act::Array<T>::r_generator);
+	void AbstractArray<T>::r_uniform(T from, T to) {
+		auto&& udist = Uniform_distribution<T>::uniform_distribution(from, to);
+		for (auto&& v : *this) {
+			v = udist(AbstractArray<T>::r_generator);
 		}
 	}
 
-	template<class T> void Array<T>::to_file(std::string const& fname) const {
+	template<class T>
+	void Array<T>::to_file(std::string const& fname) const {
 		std::ofstream file(fname);
 		if (this->ptr) {
 			if (std::is_fundamental<T>::value ||
@@ -996,8 +873,8 @@ namespace act {
 			std::is_same<T, std::complex<float>>::value) {
 			std::ofstream file(fname);
 			file << std::setprecision(std::numeric_limits<T>::max_digits10);
-			for(std::size_t r = 0; r < len; ++r) {
-				for(auto const& el : L) {
+			for (std::size_t r = 0; r < len; ++r) {
+				for (auto const& el : L) {
 					file << el(r) << " ";
 				}
 				file << std::endl;
@@ -1006,7 +883,7 @@ namespace act {
 	}
 
 	template<>
-	double Array<cx<double>>::norm() const {
+	double AbstractArray<cx<double>>::norm() const {
 		double n{};
 		for (std::size_t i = 0; i < this->size; ++i)
 			n += std::norm(this->ptr[i]);
@@ -1014,7 +891,7 @@ namespace act {
 		return n;
 	}
 	template<>
-	double Array<cx<float>>::norm() const {
+	double AbstractArray<cx<float>>::norm() const {
 		float n{};
 		for (std::size_t i = 0; i < this->size; ++i)
 			n += std::norm(this->ptr[i]);
@@ -1054,54 +931,54 @@ namespace act {
 		return c;
 	}
 
-    // Array-scalar operations.
+	// Array-scalar operations.
 	template<typename T>
 	Array<T> operator*(Array<T> const& A, T const& n) {
 		Array<T> res(A);
-		for(std::size_t i = 0; i < res.lenght(); ++i)
+		for (std::size_t i = 0; i < res.lenght(); ++i)
 			res(i) *= n;
 		return res;
 	}
 	template<typename T>
 	Array<T> operator*(T const& n, Array<T> const& A) {
-		return A*n;
+		return A * n;
 	}
 
 	template<typename T>
 	Array<T> operator/(Array<T> const& A, T const& n) {
 		Array<T> res(A);
-		for(std::size_t i = 0; i < res.lenght(); ++i)
+		for (std::size_t i = 0; i < res.lenght(); ++i)
 			res(i) /= n;
 		return res;
 	}
 	template<typename T>
 	Array<T> operator/(T const& n, Array<T> const& A) {
-		return A/n;
+		return A / n;
 	}
 
 
 	template<typename T>
 	Array<T> operator+(Array<T> const& A, T const& n) {
 		Array<T> res(A);
-		for(std::size_t i = 0; i < res.lenght(); ++i)
+		for (std::size_t i = 0; i < res.lenght(); ++i)
 			res(i) += n;
 		return res;
 	}
 	template<typename T>
 	Array<T> operator+(T const& n, Array<T> const& A) {
-		return A+n;
+		return A + n;
 	}
 
 	template<typename T>
 	Array<T> operator-(Array<T> const& A, T const& n) {
 		Array<T> res(A);
-		for(std::size_t i = 0; i < res.lenght(); ++i)
+		for (std::size_t i = 0; i < res.lenght(); ++i)
 			res(i) -= n;
 		return res;
 	}
 	template<typename T>
 	Array<T> operator-(T const& n, Array<T> const& A) {
-		return A-n;
+		return A - n;
 	}
 
 	// Stack two Arrays.
@@ -1144,29 +1021,29 @@ namespace act {
 
 	// Matrix member functions.
 	template<class T>
-	Matrix<T>::Matrix() : Array<T>(), rows(0), cols(0) {}
+	Matrix<T>::Matrix() : AbstractArray<T>(), rows(0), cols(0) {}
 
 	template<class T>
-	Matrix<T>::Matrix(std::size_t const& n, std::size_t const& m): Array<T>(n * m), rows(n), cols(m) {}
+	Matrix<T>::Matrix(std::size_t const& n, std::size_t const& m) : AbstractArray<T>(n * m), rows(n), cols(m) {}
 
 	template<class T>
-	Matrix<T>::Matrix(Matrix<T> const& M) : Array<T>(M.size), rows(M.rows), cols(M.cols) {
+	Matrix<T>::Matrix(Matrix<T> const& M) : AbstractArray<T>(M.size), rows(M.rows), cols(M.cols) {
 		for (std::size_t i = 0; i < this->size; ++i) {
 			this->ptr[i] = M.ptr[i];
 		}
 	}
 
 	template<class T>
-	Matrix<T>::Matrix(Matrix<T>&& M) : Array<T>(), rows(M.rows), cols(M.cols) {
-		this->size = M.size;
+	Matrix<T>::Matrix(Matrix<T>&& M) : AbstractArray<T>(M.size), rows(M.rows), cols(M.cols) {
 		this->ptr = M.ptr;
 		M.ptr = nullptr;
+		M.size = 0;
 		M.rows = 0;
 		M.cols = 0;
 	}
 
 	template<class T>
-	Matrix<T>::Matrix(act::Array<T> const& A, std::size_t r, std::size_t c) : Array<T>() {
+	Matrix<T>::Matrix(act::Array<T> const& A, std::size_t r, std::size_t c) : AbstractArray<T>() {
 		assert(r * c == A.size);
 		this->rows = r;
 		this->cols = c;
@@ -1176,25 +1053,26 @@ namespace act {
 		for (std::size_t i = 0; i < this->rows; ++i) {
 			for (std::size_t j = 0; j < this->cols; ++j) {
 				// this->ptr[i * this->cols + j] = A.ptr[n];
-				this->operator()(i,j) = A.ptr[n];
+				this->operator()(i, j) = A.ptr[n];
 				++n;
 			}
 		}
 	}
 
 	template<class T>
-	Matrix<T>::Matrix(act::Array<T>&& A, std::size_t r, std::size_t c) : Array<T>() {
+	Matrix<T>::Matrix(act::Array<T>&& A, std::size_t r, std::size_t c) : AbstractArray<T>() {
 		assert(r * c == A.size);
-		this->rows = r;
-		this->cols = c;
-		this->size = r * c;
 		this->ptr = A.ptr;
 		A.ptr = nullptr;
+		this->size = A.size;
+		A.size = 0;
+		this->rows = r;
+		this->cols = c;
 	}
 
 	template<class T>
-	Matrix<T>::Matrix(std::initializer_list<act::Array<T>> const& L) : Array<T>() {
-		std::size_t c{ 0 }, d{ 0 };
+	Matrix<T>::Matrix(std::initializer_list<act::Array<T>> const& L) : AbstractArray<T>() {
+		std::size_t c{}, d{};
 		std::size_t * sizes = new std::size_t[L.size()];
 		this->ptr = new T[L.size() * (L.begin())->size];
 		this->rows = L.size();
@@ -1202,7 +1080,7 @@ namespace act {
 			sizes[c] = i.size;
 			if (c > 0)
 				assert(sizes[c] == sizes[c - 1] && "Arrays have wrong dimension.");
-			if(c == 0)
+			if (c == 0)
 				this->cols = i.size;
 			d = 0;
 			for (std::size_t j = 0; j < i.size; ++j) {
@@ -1226,21 +1104,15 @@ namespace act {
 			this->size = rows * cols;
 			this->ptr = new T[this->size];
 		}
-		for (std::size_t i = 0; i < this->size; ++i) {
-			this->ptr[i] = M.ptr[i];
-		}
+		AbstractArray<T>::operator=(M);
 		return *this;
 	}
 
 	template<class T>
 	Matrix<T>& Matrix<T>::operator=(Matrix&& M) {
-		if (this->ptr != nullptr)
-			delete[] this->ptr;
-		this->ptr = M.ptr;
 		this->rows = M.rows;
 		this->cols = M.cols;
-		this->size = M.size;
-		M.ptr = nullptr;
+		AbstractArray<T>::operator=(std::move(M));
 		return *this;
 	}
 
@@ -1249,7 +1121,9 @@ namespace act {
 
 	template<class T>
 	void Matrix<T>::set_size(std::size_t n, std::size_t m) {
-		Array<T>::set_size(n * m);
+		assert(this->ptr == nullptr);
+		this->ptr = new T[n]{};
+		this->size = n;
 		this->rows = n;
 		this->cols = m;
 	}
@@ -1343,7 +1217,9 @@ namespace act {
 
 	template<class T>
 	void Matrix<T>::reset() {
-		Array<T>::reset();
+		this->size = 0;
+		delete[] this->ptr;
+		this->ptr = nullptr;
 		this->rows = 0;
 		this->cols = 0;
 	}
@@ -1360,9 +1236,9 @@ namespace act {
 	template<class T>
 	void Matrix<T>::identity() {
 		assert(this->rows == this->cols && "non-square matrix error.");
-		for(std::size_t r = 0; r < this->rows; ++r) {
-			for(std::size_t c = 0;  c < this->cols; ++c) {
-				if(r == c)
+		for (std::size_t r = 0; r < this->rows; ++r) {
+			for (std::size_t c = 0; c < this->cols; ++c) {
+				if (r == c)
 					this->ptr[r * this->cols + c] = static_cast<T>(1.);
 				else
 					this->ptr[r * this->cols + c] = static_cast<T>(0.);
@@ -1372,16 +1248,16 @@ namespace act {
 
 	template<class T>
 	void Matrix<T>::identity(std::size_t n) {
-		if(this->cols != n || this->rows != n){
+		if (this->cols != n || this->rows != n) {
 			delete[] this->ptr;
 			this->ptr = new T[n * n]{};
 			this->rows = n;
 			this->cols = n;
 			this->size = n * n;
 		}
-		for(std::size_t rr = 0; rr < this->rows; ++rr) {
-			for(std::size_t cc = 0;  cc < this->cols; ++cc) {
-				if(rr == cc)
+		for (std::size_t rr = 0; rr < this->rows; ++rr) {
+			for (std::size_t cc = 0; cc < this->cols; ++cc) {
+				if (rr == cc)
 					this->ptr[rr * this->cols + cc] = static_cast<T>(1.);
 				else
 					this->ptr[rr * this->cols + cc] = static_cast<T>(0.);
@@ -1399,8 +1275,8 @@ namespace act {
 		this->rows = old_rows + mat.rows;
 		this->size = this->rows * this->cols;
 		this->ptr = new T[this->size]{};
-		for(std::size_t n = 0, k = 0; n < this->size; ++n) {
-			if(n < old_size) {
+		for (std::size_t n = 0, k = 0; n < this->size; ++n) {
+			if (n < old_size) {
 				this->ptr[n] = temp_ptr[n];
 			}
 			else {
@@ -1442,18 +1318,18 @@ namespace act {
 		this->size = this->rows * this->cols;
 		this->ptr = new T[this->size]{};
 
-		for(std::size_t r = 0, old_c = 0, new_c = 0; r < this->rows; ++r) {
+		for (std::size_t r = 0, old_c = 0, new_c = 0; r < this->rows; ++r) {
 			old_c = 0;
 			new_c = 0;
-			for(std::size_t c = 0; c < this->cols; ++c) {
-				if(c < old_cols) {
+			for (std::size_t c = 0; c < this->cols; ++c) {
+				if (c < old_cols) {
 					this->ptr[r * this->cols + c] = temp_ptr[r *
-					old_cols + old_c];
+						old_cols + old_c];
 					++old_c;
 				}
 				else {
 					this->ptr[r * this->cols + c] = mat.ptr[r *
-					mat.cols + new_c];
+						mat.cols + new_c];
 					++new_c;
 				}
 			}
@@ -1502,7 +1378,7 @@ namespace act {
 	Matrix<T> Matrix<T>::each_prod(Matrix<T> const& M) const {
 		assert(this->cols == M.cols && this->rows == M.rows && "each_prod error.");
 		Matrix<T> res(this->rows, this->cols);
-		for(std::size_t i = 0; i < this->size; ++i) {
+		for (std::size_t i = 0; i < this->size; ++i) {
 			res.ptr[i] = this->ptr[i] * M.ptr[i];
 		}
 		return res;
@@ -1512,7 +1388,7 @@ namespace act {
 	Matrix<T> Matrix<T>::each_div(Matrix<T> const& M) const {
 		assert(this->cols == M.cols && this->rows == M.rows && "each_prod error.");
 		Matrix<T> res(this->rows, this->cols);
-		for(std::size_t i = 0; i < this->size; ++i) {
+		for (std::size_t i = 0; i < this->size; ++i) {
 			res.ptr[i] = this->ptr[i] / M.ptr[i];
 		}
 		return res;
@@ -1526,8 +1402,8 @@ namespace act {
 				std::is_same<T, std::complex<double>>::value ||
 				std::is_same<T, std::complex<float>>::value) {
 				file << std::setprecision(std::numeric_limits<T>::max_digits10);
-				for (int r = 0; r < this->rows; ++r) {
-					for (int c = 0; c < this->cols; ++c) {
+				for (std::size_t r = 0; r < this->rows; ++r) {
+					for (std::size_t c = 0; c < this->cols; ++c) {
 						file << this->operator()(r, c) << " ";
 					}
 					file << std::endl;
@@ -1548,7 +1424,54 @@ namespace act {
 		return new_matrix;
 	}
 
+	// *********************
 	// Non member functions.
+	// *********************
+
+	template<typename T>
+	Array<T> real(Array<cx<T>> a) {
+		Array<T> rpart(a.lenght());
+		std::size_t k{};
+		for (auto it = a.begin(); it != a.end(); ++it) {
+			rpart(k) = std::real(*it);
+			++k;
+		}
+		return rpart;
+	}
+
+	template<typename T>
+	Array<T> imag(Array<cx<T>> a) {
+		Array<T> ipart(a.lenght());
+		std::size_t k{};
+		for (auto it = a.begin(); it != a.end(); ++it) {
+			ipart(k) = std::imag(*it);
+			++k;
+		}
+		return ipart;
+	}
+
+	template<typename T>
+	Matrix<T> real(Matrix<cx<T>> a) {
+		Matrix<T> rpart(a.get_rows(), a.get_cols());
+		for (std::size_t r = 0; r < a.get_rows(); ++r) {
+			for (std::size_t c = 0; c < a.get_cols(); ++c) {
+				rpart(r, c) = std::real(a(r, c));
+			}
+		}
+		return rpart;
+	}
+
+	template<typename T>
+	Matrix<T> imag(Matrix<cx<T>> a) {
+		Matrix<T> ipart(a.get_rows(), a.get_cols());
+		for (std::size_t r = 0; r < a.get_rows(); ++r) {
+			for (std::size_t c = 0; c < a.get_cols(); ++c) {
+				ipart(r, c) = std::imag(a(r, c));
+			}
+		}
+		return ipart;
+	}
+
 	// Matrix-Matrix operations.
 	template<typename T>
 	Matrix<T> operator+(Matrix<T> const& A, Matrix<T> const& B) {
@@ -1691,7 +1614,7 @@ namespace act {
 		return R;
 	}
 
-    // Matrix-scalar operations
+	// Matrix-scalar operations
 	template<typename T>
 	Matrix<T> operator*(Matrix<T> const& M, T const& n) {
 		Matrix<T> res(M.get_rows(), M.get_cols());
@@ -1705,7 +1628,7 @@ namespace act {
 
 	template<typename T>
 	Matrix<T> operator*(T const& n, Matrix<T> const& M) {
-		return M*n;
+		return M * n;
 	}
 
 	template<typename T>
@@ -1721,7 +1644,7 @@ namespace act {
 
 	template<typename T>
 	Matrix<T> operator/(T const& n, Matrix<T> const& M) {
-		return M/n;
+		return M / n;
 	}
 
 	template<typename T>
@@ -1737,7 +1660,7 @@ namespace act {
 
 	template<typename T>
 	Matrix<T> operator+(T const& n, Matrix<T> const& M) {
-		return M+n;
+		return M + n;
 	}
 
 	template<typename T>
@@ -1753,7 +1676,7 @@ namespace act {
 
 	template<typename T>
 	Matrix<T> operator-(T const& n, Matrix<T> const& M) {
-		return M-n;
+		return M - n;
 	}
 }
 #endif
