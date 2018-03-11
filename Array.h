@@ -65,6 +65,11 @@ namespace act {
 		// Common constroctors.
 		AbstractArray() : size{ 0 }, ptr{ nullptr } {}
 		AbstractArray(std::size_t const& n) : size(n), ptr(new T[n]{}) {}
+		AbstractArray(AbstractArray const& A) : AbstractArray(A.size) {
+			for (std::size_t i = 0; i < this->size; ++i) {
+				this->ptr[i] = A.ptr[i];
+			}
+		}
 		AbstractArray(AbstractArray&& A) : size(A.size), ptr(A.ptr) {
 			A.ptr = nullptr;
 			A.size = 0;
@@ -78,7 +83,7 @@ namespace act {
 		}
 		AbstractArray& operator=(AbstractArray&& A) {
 			this->size = A.size;
-			if (this->ptr != nullptr)
+			if (!this->ptr)
 				delete[] this->ptr;
 			this->ptr = A.ptr;
 			A.ptr = nullptr;
@@ -102,17 +107,11 @@ namespace act {
 		public:
 			iterator() : ptr_(nullptr), index_(0) {}
 			iterator(pointer ar, std::size_t index) : ptr_(ar), index_(index) {}
-			iterator(iterator const& itr) : ptr_(itr.ptr_), index_(itr.index_) {}
+			iterator(iterator const& itr) = default;
 
 			~iterator() {}
 
-			iterator& operator=(iterator const& itr) {
-				if (this == &itr)
-					return *this;
-				this->ptr_ = itr.ptr_;
-				this->index_ = itr.index_;
-				return *this;
-			}
+			iterator& operator=(iterator const& itr) = default;
 
 			reference operator*() {
 				return this->ptr_[index_];
@@ -213,17 +212,11 @@ namespace act {
 		public:
 			const_iterator() : ptr_(nullptr), index_(0) {}
 			const_iterator(pointer ar, std::size_t index) : ptr_(ar), index_(index) {}
-			const_iterator(const_iterator const& itr) : ptr_(itr.ptr_), index_(itr.index_) {}
+			const_iterator(const_iterator const& itr) = default;
 
 			~const_iterator() {}
 
-			const_iterator& operator=(const_iterator const& itr) {
-				if (this == &itr)
-					return *this;
-				this->ptr_ = itr.ptr_;
-				this->index_ = itr.index_;
-				return *this;
-			}
+			const_iterator& operator=(const_iterator const& itr) = default;
 
 			reference operator*() {
 				return this->ptr_[index_];
@@ -415,15 +408,24 @@ namespace act {
 		using const_iterator = typename AbstractArray<T>::const_iterator;
 
 		// Constructors.
-		Array();
+		Array() : AbstractArray<T>() {}
 
-		Array(std::size_t const& n);
+		Array(std::size_t const& n) : AbstractArray<T>(n) {}
 
-		Array(Array const& A);
+		Array(Array const& A) : AbstractArray<T>(A.size) {
+			for (std::size_t i = 0; i < this->size; ++i)
+				this->ptr[i] = A(i);
+		}
 
-		Array(T const * const x, std::size_t const& N);
+		Array(T const * const x, std::size_t const& N) : AbstractArray<T>(N) {
+			assert(x != nullptr);
+			for (std::size_t i = 0; i < this->size; ++i) {
+				this->ptr[i] = x[i];
+			}
+		}
 
-		Array(Array&& A);
+		Array(Array&& A) = default;
+		// Array(Array&& A) : AbstractArray<T>(std::move(A)) {}
 
 		Array(Matrix<T> const& M);
 
@@ -434,12 +436,12 @@ namespace act {
 		// Copy assignment.
 		Array& operator=(Array const& A);
 
-		Array& operator=(Array&& A);
+		Array& operator=(Array&& A) = default;
 
 		Array& operator=(std::initializer_list<T> const& L);
 
 		// Destructor.
-		virtual ~Array();
+		virtual ~Array(){}
 
 		// Member functions.
 		void set_size(std::size_t n);
@@ -617,27 +619,6 @@ namespace act {
 
 
 	// Array member functions.
-	template<class T> Array<T>::Array() : AbstractArray<T>() {}
-
-	template<class T>
-	Array<T>::Array(std::size_t const& n) : AbstractArray<T>(n) {}
-
-	template<class T>
-	Array<T>::Array(Array<T> const& A) : AbstractArray<T>(A.size) {
-		for (std::size_t i = 0; i < this->size; ++i)
-			this->ptr[i] = A(i);
-	}
-
-	template<class T>
-	Array<T>::Array(T const * const x, std::size_t const& N) : AbstractArray<T>(N) {
-		assert(x != nullptr);
-		for (std::size_t i = 0; i < this->size; ++i) {
-			this->ptr[i] = x[i];
-		}
-	}
-
-	template<class T>
-	Array<T>::Array(Array&& A) : AbstractArray<T>(std::move(A)) {}
 
 	template<class T>
 	Array<T>::Array(Matrix<T> const& M) : AbstractArray<T>(M.rows * M.cols) {
@@ -674,12 +655,13 @@ namespace act {
 		return *this;
 	}
 
+	/*
 	template<class T>
 	Array<T>& Array<T>::operator=(Array&& A) {
 		AbstractArray<T>::operator=(std::move(A));
 		return *this;
 	}
-
+	*/
 	template<class T>
 	Array<T>& Array<T>::operator=(std::initializer_list<T> const& L) {
 		delete[] this->ptr;
@@ -693,10 +675,8 @@ namespace act {
 	}
 
 	template<class T>
-	Array<T>::~Array() {}
-
-	template<class T>
 	T& Array<T>::operator()(std::size_t const& n) { return this->ptr[n]; }
+
 	template<class T>
 	T const& Array<T>::operator()(std::size_t const& n) const { return this->ptr[n]; }
 
@@ -793,7 +773,7 @@ namespace act {
 			to = this->end();
 
 		for (auto&& i = from; i < to; i += inc) {
-			f(*i);
+			std::forward<func>(f)(*i);
 		}
 	}
 
@@ -1122,8 +1102,8 @@ namespace act {
 	template<class T>
 	void Matrix<T>::set_size(std::size_t n, std::size_t m) {
 		assert(this->ptr == nullptr);
-		this->ptr = new T[n]{};
-		this->size = n;
+		this->ptr = new T[n * m]{};
+		this->size = n * m;
 		this->rows = n;
 		this->cols = m;
 	}
