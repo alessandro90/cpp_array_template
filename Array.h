@@ -335,7 +335,7 @@ namespace act {
 		// Returns a pointer to const to the private dynamically allocated array.
 		T const * get_ptr() const { return this->ptr; }
 
-		std::size_t lenght() const { return this->size; }
+		std::size_t length() const { return this->size; }
 		friend void set_seed<T>(unsigned int seed);
 
 		// Destructor.
@@ -396,7 +396,7 @@ namespace act {
 	template<typename T>
 	class Array : public AbstractArray<T> {
 		// Inherited public members:
-		// norm(), mean(), lenght(), sum(), fill(num), get_ptr(), apply(func, from, to, inc), r_uniform(from, to).
+		// norm(), mean(), length(), sum(), fill(num), get_ptr(), apply(func, from, to, inc), r_uniform(from, to).
 		// Iterators are inherited too.
 		// Virtual overrides:
 		// virtual void reset() override;
@@ -510,7 +510,7 @@ namespace act {
 	public:
 		friend class act::Array<T>;
 		// Inherited public members:
-		// norm(), mean(), lenght(), sum(), fill(num), get_ptr(), apply(func, from, to, inc), r_uniform(from, to).
+		// norm(), mean(), length(), sum(), fill(num), get_ptr(), apply(func, from, to, inc), r_uniform(from, to).
 		// Iterators are inherited too.
 		// Virtual overrides:
 		// virtual void reset() override;
@@ -645,10 +645,10 @@ namespace act {
 	template<class T>
 	Array<T>& Array<T>::operator=(Array const& A) {
 		if (this == &A) { return *this; }
-		if (this->size != A.lenght()) {
+		if (this->size != A.length()) {
 			delete[] this->ptr;
-			this->ptr = new T[A.lenght()];
-			this->size = A.lenght();
+			this->ptr = new T[A.length()];
+			this->size = A.length();
 		}
 
 		AbstractArray<T>::operator=(A);
@@ -675,10 +675,16 @@ namespace act {
 	}
 
 	template<class T>
-	T& Array<T>::operator()(std::size_t const& n) { return this->ptr[n]; }
+	T& Array<T>::operator()(std::size_t const& n) { 
+		assert(n < this->size && "Index out of bounds.");
+		return this->ptr[n]; 
+	}
 
 	template<class T>
-	T const& Array<T>::operator()(std::size_t const& n) const { return this->ptr[n]; }
+	T const& Array<T>::operator()(std::size_t const& n) const { 
+		assert(n < this->size && "Index out of bounds.");
+		return this->ptr[n]; 
+	}
 
 	template<class T> void Array<T>::set_size(std::size_t n) {
 		assert(this->ptr == nullptr);
@@ -841,7 +847,7 @@ namespace act {
 		std::size_t *sizes = new std::size_t[L.size()];
 		std::size_t count(0), len;
 		for (auto const& el : L) {
-			sizes[count] = el.lenght();
+			sizes[count] = el.length();
 			if (count > 0)
 				assert(sizes[count] == sizes[count - 1] && "Arrays have wrong dimension.");
 			++count;
@@ -883,9 +889,9 @@ namespace act {
 	// ============================
 	template<typename S>
 	Array<S> operator+(Array<S> const& A, Array<S> const& B) {
-		assert(A.lenght() == B.lenght());
-		Array<S> R(A.lenght());
-		for (std::size_t i = 0; i < R.lenght(); ++i) {
+		assert(A.length() == B.length());
+		Array<S> R(A.length());
+		for (std::size_t i = 0; i < R.length(); ++i) {
 			R(i) = A(i) + B(i);
 		}
 		return R;
@@ -893,9 +899,9 @@ namespace act {
 
 	template<typename S>
 	Array<S> operator-(Array<S> const& A, Array<S> const& B) {
-		assert(A.lenght() == B.lenght());
-		Array<S> R(A.lenght());
-		for (std::size_t i = 0; i < R.lenght(); ++i) {
+		assert(A.length() == B.length());
+		Array<S> R(A.length());
+		for (std::size_t i = 0; i < R.length(); ++i) {
 			R(i) = A(i) - B(i);
 		}
 		return R;
@@ -903,9 +909,9 @@ namespace act {
 
 	template<typename S>
 	S operator*(Array<S> const& A, Array<S> const& B) {
-		assert(A.lenght() == B.lenght());
+		assert(A.length() == B.length());
 		S c{};
-		for (std::size_t i = 0; i < A.lenght(); ++i) {
+		for (std::size_t i = 0; i < A.length(); ++i) {
 			c += A(i) * B(i);
 		}
 		return c;
@@ -915,7 +921,7 @@ namespace act {
 	template<typename T>
 	Array<T> operator*(Array<T> const& A, T const& n) {
 		Array<T> res(A);
-		for (std::size_t i = 0; i < res.lenght(); ++i)
+		for (std::size_t i = 0; i < res.length(); ++i)
 			res(i) *= n;
 		return res;
 	}
@@ -927,7 +933,7 @@ namespace act {
 	template<typename T>
 	Array<T> operator/(Array<T> const& A, T const& n) {
 		Array<T> res(A);
-		for (std::size_t i = 0; i < res.lenght(); ++i)
+		for (std::size_t i = 0; i < res.length(); ++i)
 			res(i) /= n;
 		return res;
 	}
@@ -940,7 +946,7 @@ namespace act {
 	template<typename T>
 	Array<T> operator+(Array<T> const& A, T const& n) {
 		Array<T> res(A);
-		for (std::size_t i = 0; i < res.lenght(); ++i)
+		for (std::size_t i = 0; i < res.length(); ++i)
 			res(i) += n;
 		return res;
 	}
@@ -952,7 +958,7 @@ namespace act {
 	template<typename T>
 	Array<T> operator-(Array<T> const& A, T const& n) {
 		Array<T> res(A);
-		for (std::size_t i = 0; i < res.lenght(); ++i)
+		for (std::size_t i = 0; i < res.length(); ++i)
 			res(i) -= n;
 		return res;
 	}
@@ -964,8 +970,8 @@ namespace act {
 	// Stack two Arrays.
 	template<typename T>
 	Matrix<T> stack(Array<T> const& A, Array<T> const& B) {
-		assert(A.lenght() == B.lenght() && "Arrays must have same lenght.");
-		Matrix<T> res(A.lenght(), 2);
+		assert(A.length() == B.length() && "Arrays must have same length.");
+		Matrix<T> res(A.length(), 2);
 		for (std::size_t r = 0; r < res.get_rows(); ++r) {
 			res(r, 0) = A(r);
 			res(r, 1) = B(r);
@@ -979,7 +985,7 @@ namespace act {
 		std::size_t *sizes = new std::size_t[L.size()];
 
 		for (auto const& el : L) {
-			sizes[count] = el.lenght();
+			sizes[count] = el.length();
 			if (count > 0)
 				assert(sizes[count] == sizes[count - 1] && "Arrays have wrong dimension.");
 			++count;
@@ -1110,11 +1116,13 @@ namespace act {
 
 	template<class T>
 	T& Matrix<T>::operator()(std::size_t const& i, std::size_t const& j) {
+		assert(i < this->rows &&  j < this->cols && "Index out of bounds");
 		return this->ptr[i * this->cols + j];
 	}
 
 	template<class T>
 	T const& Matrix<T>::operator()(std::size_t const& i, std::size_t const& j) const {
+		assert(i < this->rows &&  j < this->cols && "Index out of bounds");
 		return this->ptr[i * this->cols + j];
 	}
 
@@ -1172,7 +1180,7 @@ namespace act {
 	Array<T> Matrix<T>::get_diag() const {
 		assert(this->cols == this->rows);
 		Array<T> R(this->rows);
-		for (std::size_t i = 0; i < R.lenght(); ++i)
+		for (std::size_t i = 0; i < R.length(); ++i)
 			R(i) = this->operator()(i, i);
 		return R;
 	}
@@ -1410,7 +1418,7 @@ namespace act {
 
 	template<typename T>
 	Array<T> real(Array<cx<T>> a) {
-		Array<T> rpart(a.lenght());
+		Array<T> rpart(a.length());
 		std::size_t k{};
 		for (auto it = a.begin(); it != a.end(); ++it) {
 			rpart(k) = std::real(*it);
@@ -1421,7 +1429,7 @@ namespace act {
 
 	template<typename T>
 	Array<T> imag(Array<cx<T>> a) {
-		Array<T> ipart(a.lenght());
+		Array<T> ipart(a.length());
 		std::size_t k{};
 		for (auto it = a.begin(); it != a.end(); ++it) {
 			ipart(k) = std::imag(*it);
