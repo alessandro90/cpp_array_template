@@ -6,7 +6,7 @@
 #include <complex>
 #include <iomanip>
 #include <cstddef>
-#include "mkl.h"
+// #include "mkl.h"
 #include <iterator>
 #include <string>
 #include <fstream>
@@ -64,7 +64,7 @@ namespace act {
 
 		// Common constroctors.
 		AbstractArray() : size{ 0 }, ptr{ nullptr } {}
-		AbstractArray(std::size_t const& n) : size(n), ptr(new T[n]{}) {}
+		explicit AbstractArray(std::size_t const& n) : size(n), ptr(new T[n]{}) {}
 		AbstractArray(AbstractArray const& A) : AbstractArray(A.size) {
 			for (std::size_t i = 0; i < this->size; ++i) {
 				this->ptr[i] = A.ptr[i];
@@ -74,21 +74,11 @@ namespace act {
 			A.ptr = nullptr;
 			A.size = 0;
 		}
-		// Assignment operators.
-		AbstractArray& operator=(AbstractArray const& A) {
-			for (std::size_t i = 0; i < this->size; ++i) {
-				this->ptr[i] = A.ptr[i];
-			}
-			return *this;
-		}
-		AbstractArray& operator=(AbstractArray&& A) {
-			this->size = A.size;
-			if (!this->ptr)
-				delete[] this->ptr;
-			this->ptr = A.ptr;
-			A.ptr = nullptr;
-			A.size = 0;
-			return *this;
+
+		friend void swap(AbstractArray& a, AbstractArray& b) {
+			using std::swap;
+			swap(a.size, b.size);
+			swap(a.ptr, b.ptr);
 		}
 
 	public:
@@ -410,7 +400,7 @@ namespace act {
 		// Constructors.
 		Array() : AbstractArray<T>() {}
 
-		Array(std::size_t const& n) : AbstractArray<T>(n) {}
+		explicit Array(std::size_t const& n) : AbstractArray<T>(n) {}
 
 		Array(Array const& A) : AbstractArray<T>(A.size) {
 			for (std::size_t i = 0; i < this->size; ++i)
@@ -434,9 +424,7 @@ namespace act {
 		Array(std::initializer_list<T> const& L);
 
 		// Copy assignment.
-		Array& operator=(Array const& A);
-
-		Array& operator=(Array&& A) = default;
+		Array& operator=(Array A);
 
 		Array& operator=(std::initializer_list<T> const& L);
 
@@ -451,11 +439,11 @@ namespace act {
 
 		Array operator-() const;
 
-		Array<T>& add(T const& x);
+		Array<T>& extend(T const& x);
 
-		Array<T>& add(Array<T> const& A);
+		Array<T>& extend(Array<T> const& A);
 
-		Array<T>& add(std::initializer_list<T> const& L);
+		Array<T>& extend(std::initializer_list<T> const& L);
 
 		Array<T> each_prod(Array<T> const& A) const;
 
@@ -532,12 +520,9 @@ namespace act {
 
 		Matrix(act::Array<T>&& A, std::size_t r, std::size_t c);
 
-		explicit Matrix(std::initializer_list<act::Array<T>> const& L);
-
+		Matrix(std::initializer_list<std::initializer_list<T>> const& L);
 		// Copy assignment
-		Matrix& operator=(Matrix const& M);
-
-		Matrix& operator=(Matrix&& M);
+		Matrix& operator=(Matrix M);
 
 		// Destructor.
 		virtual ~Matrix();
@@ -643,15 +628,8 @@ namespace act {
 	}
 
 	template<class T>
-	Array<T>& Array<T>::operator=(Array const& A) {
-		if (this == &A) { return *this; }
-		if (this->size != A.length()) {
-			delete[] this->ptr;
-			this->ptr = new T[A.length()];
-			this->size = A.length();
-		}
-
-		AbstractArray<T>::operator=(A);
+	Array<T>& Array<T>::operator=(Array A) {
+		swap(static_cast<AbstractArray<T>&>(*this), static_cast<AbstractArray<T>&>(A));
 		return *this;
 	}
 
@@ -720,7 +698,7 @@ namespace act {
 		return this->sum() / static_cast<double>(this->size);
 	}
 
-	template<class T> Array<T>& Array<T>::add(T const& x) {
+	template<class T> Array<T>& Array<T>::extend(T const& x) {
 		T *p(this->ptr);
 		this->ptr = nullptr;
 		this->size += 1;
@@ -733,7 +711,7 @@ namespace act {
 		return *this;
 	}
 
-	template<class T> Array<T>& Array<T>::add(Array<T> const& A) {
+	template<class T> Array<T>& Array<T>::extend(Array<T> const& A) {
 		T *p(this->ptr);
 		this->ptr = nullptr;
 		std::size_t temp_size = this->size;
@@ -748,8 +726,8 @@ namespace act {
 		return *this;
 	}
 
-	template <class T> Array<T>& Array<T>::add(std::initializer_list<T> const& L) {
-		return this->add(Array<T>(L));
+	template <class T> Array<T>& Array<T>::extend(std::initializer_list<T> const& L) {
+		return this->extend(Array<T>(L));
 	}
 
 	template<class T> void AbstractArray<T>::fill(T const& num) {
@@ -1057,20 +1035,20 @@ namespace act {
 	}
 
 	template<class T>
-	Matrix<T>::Matrix(std::initializer_list<act::Array<T>> const& L) : AbstractArray<T>() {
+	Matrix<T>::Matrix(std::initializer_list<std::initializer_list<T>> const& L) : AbstractArray<T>() {
 		std::size_t c{}, d{};
 		std::size_t * sizes = new std::size_t[L.size()];
-		this->ptr = new T[L.size() * (L.begin())->size];
+		this->ptr = new T[L.size() * (L.begin())->size()];
 		this->rows = L.size();
 		for (auto const& i : L) {
-			sizes[c] = i.size;
+			sizes[c] = i.size();
 			if (c > 0)
 				assert(sizes[c] == sizes[c - 1] && "Arrays have wrong dimension.");
 			if (c == 0)
-				this->cols = i.size;
+				this->cols = i.size();
 			d = 0;
-			for (std::size_t j = 0; j < i.size; ++j) {
-				this->ptr[c * this->cols + d] = i(j);
+			for (std::size_t j = 0; j < i.size(); ++j) {
+				this->ptr[c * this->cols + d] = *(i.begin() + j);
 				++d;
 			}
 			++c;
@@ -1080,25 +1058,11 @@ namespace act {
 	}
 
 	template<class T>
-	Matrix<T>& Matrix<T>::operator=(Matrix const& M) {
-		if (this == &M)
-			return *this;
-		if (this->rows != M.rows || this->cols != M.cols) {
-			delete[] this->ptr;
-			this->rows = M.rows;
-			this->cols = M.cols;
-			this->size = rows * cols;
-			this->ptr = new T[this->size];
-		}
-		AbstractArray<T>::operator=(M);
-		return *this;
-	}
-
-	template<class T>
-	Matrix<T>& Matrix<T>::operator=(Matrix&& M) {
-		this->rows = M.rows;
-		this->cols = M.cols;
-		AbstractArray<T>::operator=(std::move(M));
+	Matrix<T>& Matrix<T>::operator=(Matrix M) {
+		using std::swap;
+		swap(this->rows, M.rows);
+		swap(this->cols, M.cols);
+		swap(static_cast<AbstractArray<T>&>(*this), static_cast<AbstractArray<T>&>(M));
 		return *this;
 	}
 
@@ -1500,50 +1464,50 @@ namespace act {
 		}
 		return R;
 	}
-	template<>
-	Matrix<double> operator*(Matrix<double> const& M, Matrix<double> const& N) {
-		assert(M.cols == N.rows && "Matrices have wrong dimensions!");
-		Matrix<double> R(M.rows, N.cols);
-		double const alpha{ 1. }, beta{ 0.0 };
-		cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, M.rows, N.cols,
-			M.cols, alpha, M.ptr, M.cols, N.ptr, N.cols, beta, R.ptr, R.cols);
+	// template<>
+	// Matrix<double> operator*(Matrix<double> const& M, Matrix<double> const& N) {
+	// 	assert(M.cols == N.rows && "Matrices have wrong dimensions!");
+	// 	Matrix<double> R(M.rows, N.cols);
+	// 	double const alpha{ 1. }, beta{ 0.0 };
+	// 	cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, M.rows, N.cols,
+	// 		M.cols, alpha, M.ptr, M.cols, N.ptr, N.cols, beta, R.ptr, R.cols);
 
-		return R;
-	}
-	template<>
-	Matrix<float> operator*(Matrix<float> const& M, Matrix<float> const& N) {
-		assert(M.cols == N.rows && "Matrices have wrong dimensions!");
-		Matrix<float> R(M.rows, N.cols);
-		float const alpha{ 1.0f }, beta{ 0.0f };
-		cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, M.rows, N.cols,
-			M.cols, alpha, M.ptr, M.cols, N.ptr, N.cols, beta, R.ptr, R.cols);
+	// 	return R;
+	// }
+	// template<>
+	// Matrix<float> operator*(Matrix<float> const& M, Matrix<float> const& N) {
+	// 	assert(M.cols == N.rows && "Matrices have wrong dimensions!");
+	// 	Matrix<float> R(M.rows, N.cols);
+	// 	float const alpha{ 1.0f }, beta{ 0.0f };
+	// 	cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, M.rows, N.cols,
+	// 		M.cols, alpha, M.ptr, M.cols, N.ptr, N.cols, beta, R.ptr, R.cols);
 
-		return R;
-	}
-	template<>
-	Matrix<cx<double>> operator*(Matrix<cx<double>> const& M,
-		Matrix<cx<double>> const& N) {
-		assert(M.cols == N.rows && "Matrices have wrong dimensions!");
-		Matrix<cx<double>> R(M.rows, N.cols);
-		cx<double> alpha{ 1., 0. };
-		cx<double> beta{ 0., 0. };
-		cblas_zgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, M.rows,
-			N.cols, M.cols, &alpha, M.ptr, M.cols, N.ptr, N.cols, &beta, R.ptr, R.cols);
+	// 	return R;
+	// }
+	// template<>
+	// Matrix<cx<double>> operator*(Matrix<cx<double>> const& M,
+	// 	Matrix<cx<double>> const& N) {
+	// 	assert(M.cols == N.rows && "Matrices have wrong dimensions!");
+	// 	Matrix<cx<double>> R(M.rows, N.cols);
+	// 	cx<double> alpha{ 1., 0. };
+	// 	cx<double> beta{ 0., 0. };
+	// 	cblas_zgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, M.rows,
+	// 		N.cols, M.cols, &alpha, M.ptr, M.cols, N.ptr, N.cols, &beta, R.ptr, R.cols);
 
-		return R;
-	}
-	template<>
-	Matrix<cx<float>> operator*(Matrix<cx<float>> const& M,
-		Matrix<cx<float>> const& N) {
-		assert(M.cols == N.rows && "Matrices have wrong dimensions!");
-		Matrix<cx<float>> R(M.rows, N.cols);
-		cx<float> alpha{ 1., 0. };
-		cx<float> beta{ 0., 0. };
-		cblas_zgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, M.rows, N.cols,
-			M.cols, &alpha, M.ptr, M.cols, N.ptr, N.cols, &beta, R.ptr, R.cols);
+	// 	return R;
+	// }
+	// template<>
+	// Matrix<cx<float>> operator*(Matrix<cx<float>> const& M,
+	// 	Matrix<cx<float>> const& N) {
+	// 	assert(M.cols == N.rows && "Matrices have wrong dimensions!");
+	// 	Matrix<cx<float>> R(M.rows, N.cols);
+	// 	cx<float> alpha{ 1., 0. };
+	// 	cx<float> beta{ 0., 0. };
+	// 	cblas_zgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, M.rows, N.cols,
+	// 		M.cols, &alpha, M.ptr, M.cols, N.ptr, N.cols, &beta, R.ptr, R.cols);
 
-		return R;
-	}
+	// 	return R;
+	// }
 
 
 	// Matrix-Array operations.
@@ -1559,48 +1523,48 @@ namespace act {
 		}
 		return R;
 	}
-	template<>
-	Array<double> operator*(Matrix<double> const& M, Array<double> const& A) {
-		assert(M.cols == A.size);
-		Array<double> R(M.rows);
-		double alpha{ 1. }, beta{ 0. };
-		int inc{ 1 };
-		cblas_dgemv(CblasRowMajor, CblasNoTrans, M.rows, M.cols, alpha,
-			M.ptr, M.cols, A.ptr, inc, beta, R.ptr, inc);
-		return R;
-	}
-	template<>
-	Array<float> operator*(Matrix<float> const& M, Array<float> const& A) {
-		assert(M.cols == A.size);
-		Array<float> R(M.rows);
-		float alpha{ 1.f }, beta{ 0.f };
-		int inc{ 1 };
-		cblas_sgemv(CblasRowMajor, CblasNoTrans, M.rows, M.cols, alpha,
-			M.ptr, M.cols, A.ptr, inc, beta, R.ptr, inc);
-		return R;
-	}
-	template<>
-	Array<cx<double>> operator*(Matrix<cx<double>> const& M,
-		Array<cx<double>> const& A) {
-		assert(M.cols == A.size);
-		Array<cx<double>> R(M.rows);
-		cx<double> alpha{ 1., 0. }, beta{ 0., 0. };
-		int inc{ 1 };
-		cblas_zgemv(CblasRowMajor, CblasNoTrans, M.rows, M.cols, &alpha,
-			M.ptr, M.cols, A.ptr, inc, &beta, R.ptr, inc);
-		return R;
-	}
-	template<>
-	Array<cx<float>> operator*(Matrix<cx<float>> const& M,
-		Array<cx<float>> const& A) {
-		assert(M.cols == A.size);
-		Array<cx<float>> R(M.rows);
-		cx<float> alpha{ 1.f, 0.f }, beta{ 0.f, 0.f };
-		int inc{ 1 };
-		cblas_cgemv(CblasRowMajor, CblasNoTrans, M.rows, M.cols, &alpha,
-			M.ptr, M.cols, A.ptr, inc, &beta, R.ptr, inc);
-		return R;
-	}
+	// template<>
+	// Array<double> operator*(Matrix<double> const& M, Array<double> const& A) {
+	// 	assert(M.cols == A.size);
+	// 	Array<double> R(M.rows);
+	// 	double alpha{ 1. }, beta{ 0. };
+	// 	int inc{ 1 };
+	// 	cblas_dgemv(CblasRowMajor, CblasNoTrans, M.rows, M.cols, alpha,
+	// 		M.ptr, M.cols, A.ptr, inc, beta, R.ptr, inc);
+	// 	return R;
+	// }
+	// template<>
+	// Array<float> operator*(Matrix<float> const& M, Array<float> const& A) {
+	// 	assert(M.cols == A.size);
+	// 	Array<float> R(M.rows);
+	// 	float alpha{ 1.f }, beta{ 0.f };
+	// 	int inc{ 1 };
+	// 	cblas_sgemv(CblasRowMajor, CblasNoTrans, M.rows, M.cols, alpha,
+	// 		M.ptr, M.cols, A.ptr, inc, beta, R.ptr, inc);
+	// 	return R;
+	// }
+	// template<>
+	// Array<cx<double>> operator*(Matrix<cx<double>> const& M,
+	// 	Array<cx<double>> const& A) {
+	// 	assert(M.cols == A.size);
+	// 	Array<cx<double>> R(M.rows);
+	// 	cx<double> alpha{ 1., 0. }, beta{ 0., 0. };
+	// 	int inc{ 1 };
+	// 	cblas_zgemv(CblasRowMajor, CblasNoTrans, M.rows, M.cols, &alpha,
+	// 		M.ptr, M.cols, A.ptr, inc, &beta, R.ptr, inc);
+	// 	return R;
+	// }
+	// template<>
+	// Array<cx<float>> operator*(Matrix<cx<float>> const& M,
+	// 	Array<cx<float>> const& A) {
+	// 	assert(M.cols == A.size);
+	// 	Array<cx<float>> R(M.rows);
+	// 	cx<float> alpha{ 1.f, 0.f }, beta{ 0.f, 0.f };
+	// 	int inc{ 1 };
+	// 	cblas_cgemv(CblasRowMajor, CblasNoTrans, M.rows, M.cols, &alpha,
+	// 		M.ptr, M.cols, A.ptr, inc, &beta, R.ptr, inc);
+	// 	return R;
+	// }
 
 	// Matrix-scalar operations
 	template<typename T>
